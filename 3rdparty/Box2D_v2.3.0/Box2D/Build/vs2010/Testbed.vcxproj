@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|Win32">
+      <Configuration>Debug</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{47A4974F-022C-3E4C-866C-191DCAD2F5A6}</ProjectGuid>
+    <RootNamespace>Testbed</RootNamespace>
+    <Keyword>Win32Proj</Keyword>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <OutDir>bin\Debug\</OutDir>
+    <IntDir>obj\Debug\Testbed\</IntDir>
+    <TargetName>Testbed</TargetName>
+    <TargetExt>.exe</TargetExt>
+    <LinkIncremental>true</LinkIncremental>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <OutDir>bin\Release\</OutDir>
+    <IntDir>obj\Release\Testbed\</IntDir>
+    <TargetName>Testbed</TargetName>
+    <TargetExt>.exe</TargetExt>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <AdditionalIncludeDirectories>..\..;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MinimalRebuild>true</MinimalRebuild>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <PrecompiledHeader></PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
+      <ProgramDataBaseFileName>$(OutDir)Testbed.pdb</ProgramDataBaseFileName>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>FreeGLUT.lib;glu32.lib;opengl32.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)Testbed.exe</OutputFile>
+      <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <ClCompile>
+      <Optimization>Full</Optimization>
+      <AdditionalIncludeDirectories>..\..;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MinimalRebuild>false</MinimalRebuild>
+      <StringPooling>true</StringPooling>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <PrecompiledHeader></PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat></DebugInformationFormat>
+    </ClCompile>
+    <ResourceCompile>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>false</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalDependencies>FreeGLUT.lib;glu32.lib;opengl32.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <OutputFile>$(OutDir)Testbed.exe</OutputFile>
+      <EntryPointSymbol>mainCRTStartup</EntryPointSymbol>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\Testbed\Framework\Render.h" />
+    <ClInclude Include="..\..\Testbed\Framework\Test.h" />
+    <ClInclude Include="..\..\Testbed\Tests\AddPair.h" />
+    <ClInclude Include="..\..\Testbed\Tests\ApplyForce.h" />
+    <ClInclude Include="..\..\Testbed\Tests\BodyTypes.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Breakable.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Bridge.h" />
+    <ClInclude Include="..\..\Testbed\Tests\BulletTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Cantilever.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Car.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Chain.h" />
+    <ClInclude Include="..\..\Testbed\Tests\CharacterCollision.h" />
+    <ClInclude Include="..\..\Testbed\Tests\CollisionFiltering.h" />
+    <ClInclude Include="..\..\Testbed\Tests\CollisionProcessing.h" />
+    <ClInclude Include="..\..\Testbed\Tests\CompoundShapes.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Confined.h" />
+    <ClInclude Include="..\..\Testbed\Tests\ContinuousTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\ConvexHull.h" />
+    <ClInclude Include="..\..\Testbed\Tests\ConveyorBelt.h" />
+    <ClInclude Include="..\..\Testbed\Tests\DistanceTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Dominos.h" />
+    <ClInclude Include="..\..\Testbed\Tests\DumpShell.h" />
+    <ClInclude Include="..\..\Testbed\Tests\DynamicTreeTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\EdgeShapes.h" />
+    <ClInclude Include="..\..\Testbed\Tests\EdgeTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Gears.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Mobile.h" />
+    <ClInclude Include="..\..\Testbed\Tests\MobileBalanced.h" />
+    <ClInclude Include="..\..\Testbed\Tests\MotorJoint.h" />
+    <ClInclude Include="..\..\Testbed\Tests\OneSidedPlatform.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Pinball.h" />
+    <ClInclude Include="..\..\Testbed\Tests\PolyCollision.h" />
+    <ClInclude Include="..\..\Testbed\Tests\PolyShapes.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Prismatic.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Pulleys.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Pyramid.h" />
+    <ClInclude Include="..\..\Testbed\Tests\RayCast.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Revolute.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Rope.h" />
+    <ClInclude Include="..\..\Testbed\Tests\RopeJoint.h" />
+    <ClInclude Include="..\..\Testbed\Tests\SensorTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\ShapeEditing.h" />
+    <ClInclude Include="..\..\Testbed\Tests\SliderCrank.h" />
+    <ClInclude Include="..\..\Testbed\Tests\SphereStack.h" />
+    <ClInclude Include="..\..\Testbed\Tests\TheoJansen.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Tiles.h" />
+    <ClInclude Include="..\..\Testbed\Tests\TimeOfImpact.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Tumbler.h" />
+    <ClInclude Include="..\..\Testbed\Tests\VaryingFriction.h" />
+    <ClInclude Include="..\..\Testbed\Tests\VaryingRestitution.h" />
+    <ClInclude Include="..\..\Testbed\Tests\VerticalStack.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Web.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\Testbed\Framework\Main.cpp">
+    </ClCompile>
+    <ClCompile Include="..\..\Testbed\Framework\Render.cpp">
+    </ClCompile>
+    <ClCompile Include="..\..\Testbed\Framework\Test.cpp">
+    </ClCompile>
+    <ClCompile Include="..\..\Testbed\Tests\TestEntries.cpp">
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="Box2D.vcxproj">
+      <Project>{8DC68CD0-A94F-CA4E-9635-A8A4EACBAAE7}</Project>
+    </ProjectReference>
+    <ProjectReference Include="GLUI.vcxproj">
+      <Project>{A2564638-FA6B-1941-9B77-989B8E74B2E7}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

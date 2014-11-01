@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClInclude Include="..\..\Testbed\Framework\Render.h" />
+    <ClInclude Include="..\..\Testbed\Framework\Test.h" />
+    <ClInclude Include="..\..\Testbed\Tests\AddPair.h" />
+    <ClInclude Include="..\..\Testbed\Tests\ApplyForce.h" />
+    <ClInclude Include="..\..\Testbed\Tests\BodyTypes.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Breakable.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Bridge.h" />
+    <ClInclude Include="..\..\Testbed\Tests\BulletTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Cantilever.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Car.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Chain.h" />
+    <ClInclude Include="..\..\Testbed\Tests\CharacterCollision.h" />
+    <ClInclude Include="..\..\Testbed\Tests\CollisionFiltering.h" />
+    <ClInclude Include="..\..\Testbed\Tests\CollisionProcessing.h" />
+    <ClInclude Include="..\..\Testbed\Tests\CompoundShapes.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Confined.h" />
+    <ClInclude Include="..\..\Testbed\Tests\ContinuousTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\ConvexHull.h" />
+    <ClInclude Include="..\..\Testbed\Tests\ConveyorBelt.h" />
+    <ClInclude Include="..\..\Testbed\Tests\DistanceTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Dominos.h" />
+    <ClInclude Include="..\..\Testbed\Tests\DumpShell.h" />
+    <ClInclude Include="..\..\Testbed\Tests\DynamicTreeTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\EdgeShapes.h" />
+    <ClInclude Include="..\..\Testbed\Tests\EdgeTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Gears.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Mobile.h" />
+    <ClInclude Include="..\..\Testbed\Tests\MobileBalanced.h" />
+    <ClInclude Include="..\..\Testbed\Tests\MotorJoint.h" />
+    <ClInclude Include="..\..\Testbed\Tests\OneSidedPlatform.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Pinball.h" />
+    <ClInclude Include="..\..\Testbed\Tests\PolyCollision.h" />
+    <ClInclude Include="..\..\Testbed\Tests\PolyShapes.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Prismatic.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Pulleys.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Pyramid.h" />
+    <ClInclude Include="..\..\Testbed\Tests\RayCast.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Revolute.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Rope.h" />
+    <ClInclude Include="..\..\Testbed\Tests\RopeJoint.h" />
+    <ClInclude Include="..\..\Testbed\Tests\SensorTest.h" />
+    <ClInclude Include="..\..\Testbed\Tests\ShapeEditing.h" />
+    <ClInclude Include="..\..\Testbed\Tests\SliderCrank.h" />
+    <ClInclude Include="..\..\Testbed\Tests\SphereStack.h" />
+    <ClInclude Include="..\..\Testbed\Tests\TheoJansen.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Tiles.h" />
+    <ClInclude Include="..\..\Testbed\Tests\TimeOfImpact.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Tumbler.h" />
+    <ClInclude Include="..\..\Testbed\Tests\VaryingFriction.h" />
+    <ClInclude Include="..\..\Testbed\Tests\VaryingRestitution.h" />
+    <ClInclude Include="..\..\Testbed\Tests\VerticalStack.h" />
+    <ClInclude Include="..\..\Testbed\Tests\Web.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\Testbed\Framework\Main.cpp" />
+    <ClCompile Include="..\..\Testbed\Framework\Render.cpp" />
+    <ClCompile Include="..\..\Testbed\Framework\Test.cpp" />
+    <ClCompile Include="..\..\Testbed\Tests\TestEntries.cpp" />
+  </ItemGroup>
+</Project>

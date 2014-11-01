@@ -1,0 +1,2256 @@
+/*
+ * Copyright 2011-2013 Branimir Karadzic. All rights reserved.
+ * License: http://www.opensource.org/licenses/BSD-2-Clause
+ */
+
+#include "common.h"
+
+#define _USE_MATH_DEFINES
+#include <math.h>
+
+#include <bgfx.h>
+#include <bx/timer.h>
+#include "entry/entry.h"
+#include "fpumath.h"
+#include "json\json.h"
+#include "pugixml.hpp"
+
+#include <map>
+
+#include <stdio.h>
+#include <string.h>
+
+inline float DegToRad( float deg )
+{
+	return (float)(deg / 180.f) * (float)M_PI;
+}
+
+inline float WrapAngle( float ang )
+{
+	while ( ang < -M_PI )
+		ang += (2.f*M_PI);
+	while ( ang > M_PI )
+		ang -= (2.f*M_PI);
+	return ang;
+}
+
+inline float InterpAngle( float to, float from, float dt )
+{
+	float wrap = WrapAngle( to - from );
+	return from + wrap * dt;
+}
+
+struct Matrix2x3
+{
+	float f[3][2];
+};
+
+void mul( Matrix2x3 &o, Matrix2x3 const &a, Matrix2x3 const &b )
+{
+	o.f[0][0] = a.f[0][0] * b.f[0][0] + a.f[0][1] * b.f[1][0];
+	o.f[0][1] = a.f[0][0] * b.f[0][1] + a.f[0][1] * b.f[1][1];
+	o.f[1][0] = a.f[1][0] * b.f[0][0] + a.f[1][1] * b.f[1][0];
+	o.f[1][1] = a.f[1][0] * b.f[0][1] + a.f[1][1] * b.f[1][1];
+	o.f[2][0] = a.f[2][0] * b.f[0][0] + a.f[2][1] * b.f[1][0] + b.f[2][0];
+	o.f[2][1] = a.f[2][0] * b.f[0][1] + a.f[2][1] * b.f[1][1] + b.f[2][1];
+}
+
+void mul( float o[2], float x, float y, Matrix2x3 const &a )
+{
+	o[0] = x * a.f[0][0] + y * a.f[1][0] + a.f[2][0];
+	o[1] = x * a.f[0][1] + y * a.f[1][1] + a.f[2][1];
+}
+
+
+void Serialise( Json::Value const &node, bool &val )
+{
+	if ( node.isNull() )
+	{
+		val = false;
+		return;
+	}
+	val = node.asBool();
+}
+
+void Serialise( Json::Value const &node, int &val )
+{
+	if ( node.isNull() )
+	{
+		val = 0;
+		return;
+	}
+	val = node.asInt();
+}
+
+void Serialise( Json::Value const &node, float &val )
+{
+	if ( node.isNull() )
+	{
+		val = 0.f;
+		return;
+	}
+	val = node.asFloat();
+}
+
+void Serialise( Json::Value const &node, std::string &val )
+{
+	if ( node.isNull() )
+	{
+		val = "";
+		return;
+	}
+	val = node.asString();
+}
+
+template <class T>
+void Serialise( Json::Value const &node, std::map<std::string,T> &val )
+{
+	if ( node.isNull() )
+	{
+		val.clear();
+		return;
+	}
+	unsigned int numKeys = node.getNumKeys();
+	for (unsigned int i=0; i<numKeys; i++)
+	{
+		Serialise( node[node.getKey(i)], val[node.getKey(i)] );
+	}
+}
+
+template <class T>
+void Serialise( Json::Value const &node, std::vector<std::pair<std::string,T>> &val )
+{
+	if ( node.isNull() )
+	{
+		val.clear();
+		return;
+	}
+	unsigned int numKeys = node.getNumKeys();
+	for (unsigned int i=0; i<numKeys; i++)
+	{
+		val.push_back( std::pair<std::string,T>() );
+		std::pair<std::string,T> &kv = val.back();
+		kv.first = node.getKey(i);
+		Serialise( node[node.getKey(i)], kv.second );
+	}
+}
+
+template <class T>
+void Serialise( Json::Value const &node, std::vector<T> &val )
+{
+	if ( node.isNull() )
+	{
+		val.clear();
+		return;
+	}
+	int num = node.size();
+	for (int i=0; i<num; i++)
+	{
+		val.push_back( T() );
+		T &v = val.back();
+		Serialise( node[i], v );
+	}
+}
+
+template <class T, class RootT>
+void Serialise( Json::Value const &node, std::vector<std::pair<std::string,T>> &val, RootT &root )
+{
+	if ( node.isNull() )
+	{
+		val.clear();
+		return;
+	}
+	unsigned int numKeys = node.getNumKeys();
+	for (unsigned int i=0; i<numKeys; i++)
+	{
+		val.push_back( std::pair<std::string,T>() );
+		std::pair<std::string,T> &kv = val.back();
+		kv.first = node.getKey(i);
+		Serialise( node[node.getKey(i)], kv.second, root );
+	}
+}
+
+template <class T, class RootT>
+void Serialise( Json::Value const &node, std::map<std::string,T> &val, RootT &root )
+{
+	if ( node.isNull() )
+	{
+		val.clear();
+		return;
+	}
+	unsigned int numKeys = node.getNumKeys();
+	for (unsigned int i=0; i<numKeys; i++)
+	{
+		Serialise( node[node.getKey(i)], val[node.getKey(i)], root );
+	}
+}
+
+
+template <class T, class RootT>
+void Serialise( Json::Value const &node, std::vector<T> &val, RootT &root  )
+{
+	if ( node.isNull() )
+	{
+		val.clear();
+		return;
+	}
+	int num = node.size();
+	for (int i=0; i<num; i++)
+	{
+		val.push_back( T() );
+		T &v = val.back();
+		Serialise( node[i], v, root );
+	}
+}
+
+template <class T, class RootT, class Root2T>
+void Serialise( Json::Value const &node, std::vector<T> &val, RootT &root, Root2T &root2 )
+{
+	if ( node.isNull() )
+	{
+		val.clear();
+		return;
+	}
+	int num = node.size();
+	for (int i=0; i<num; i++)
+	{
+		val.push_back( T() );
+		T &v = val.back();
+		Serialise( node[i], v, root, root2 );
+	}
+}
+
+
+struct PosColorTexCoord0Vertex
+{
+	float m_x;
+	float m_y;
+	float m_z;
+	uint32_t m_abgr;
+	float m_u;
+	float m_v;
+};
+
+static bgfx::VertexDecl s_PosColorTexCoord0Decl;
+
+static const char* s_shaderPath = NULL;
+static bool s_flipV = false;
+
+static void shaderFilePath(char* _out, const char* _name)
+{
+	strcpy(_out, s_shaderPath);
+	strcat(_out, _name);
+	strcat(_out, ".bin");
+}
+
+long int fsize(FILE* _file)
+{
+	long int pos = ftell(_file);
+	fseek(_file, 0L, SEEK_END);
+	long int size = ftell(_file);
+	fseek(_file, pos, SEEK_SET);
+	return size;
+}
+
+static const bgfx::Memory* load(const char* _filePath)
+{
+	FILE* file = fopen(_filePath, "rb");
+	if (NULL != file)
+	{
+		uint32_t size = (uint32_t)fsize(file);
+		const bgfx::Memory* mem = bgfx::alloc(size+1);
+		size_t ignore = fread(mem->data, 1, size, file);
+		BX_UNUSED(ignore);
+		fclose(file);
+		mem->data[mem->size-1] = '\0';
+		return mem;
+	}
+
+	return NULL;
+}
+
+static const bgfx::Memory* loadShader(const char* _name)
+{
+	char filePath[512];
+	shaderFilePath(filePath, _name);
+	return load(filePath);
+}
+
+static const bgfx::Memory* loadTexture(const char* _name)
+{
+	char filePath[512];
+	if ( _name[0] == '/' || _name[0] == '\\' )
+	{
+		strcpy(filePath, _name+1);
+	} else
+	{
+		strcpy(filePath, "textures/");
+		strcat(filePath, _name);
+	}
+	return load(filePath);
+}
+
+static char *readTextFile( const char *filename, int &len )
+{
+	FILE *f = fopen( filename, "rb" );
+	if ( f )
+	{
+		fseek( f, 0, SEEK_END );
+		len = ftell( f );
+		fseek( f, 0, SEEK_SET );
+		char *mem = (char*)malloc( len + 1 );
+		mem[len] = 0;
+		fread( mem, 1, len, f );
+		fclose( f );
+		return mem;
+	}
+	return NULL;
+}
+
+static bgfx::ProgramHandle loadProgram(const char* _vsName, const char* _fsName)
+{
+	const bgfx::Memory* mem;
+
+	// Load vertex shader.
+	mem = loadShader(_vsName);
+	bgfx::VertexShaderHandle vsh = bgfx::createVertexShader(mem);
+
+	// Load fragment shader.
+	mem = loadShader(_fsName);
+	bgfx::FragmentShaderHandle fsh = bgfx::createFragmentShader(mem);
+
+	// Create program from shaders.
+	bgfx::ProgramHandle program = bgfx::createProgram(vsh, fsh);
+
+	// We can destroy vertex and fragment shader here since
+	// their reference is kept inside bgfx after calling createProgram.
+	// Vertex and fragment shader will be destroyed once program is
+	// destroyed.
+	bgfx::destroyVertexShader(vsh);
+	bgfx::destroyFragmentShader(fsh);
+
+	return program;
+}
+
+bool allocTransientBuffers(bgfx::TransientVertexBuffer* _tvb, const bgfx::VertexDecl& _decl, uint16_t _numVertices, bgfx::TransientIndexBuffer* _tib, uint16_t _numIndices)
+{
+	if (bgfx::checkAvailTransientVertexBuffer(_numVertices, _decl)
+	&&  bgfx::checkAvailTransientIndexBuffer(_numIndices) )
+	{
+		bgfx::allocTransientVertexBuffer(_tvb, _numVertices, _decl);
+		bgfx::allocTransientIndexBuffer(_tib, _numIndices);
+		return true;
+	}
+
+	return false;
+}
+
+void renderScreenSpaceQuad(uint32_t _view, bgfx::ProgramHandle _program, float _x, float _y, float _width, float _height)
+{
+	bgfx::TransientVertexBuffer tvb;
+	bgfx::TransientIndexBuffer tib;
+
+	if (allocTransientBuffers(&tvb, s_PosColorTexCoord0Decl, 4, &tib, 6) )
+	{
+		PosColorTexCoord0Vertex* vertex = (PosColorTexCoord0Vertex*)tvb.data;
+
+		float zz = 0.0f;
+
+		const float minx = _x;
+		const float maxx = _x + _width;
+		const float miny = _y;
+		const float maxy = _y + _height;
+
+		float minu =  0.0f;
+		float minv =  0.0f;
+		float maxu =  1.0f;
+		float maxv =  1.0f;
+
+		vertex[0].m_x = minx;
+		vertex[0].m_y = miny;
+		vertex[0].m_z = zz;
+		vertex[0].m_abgr = 0xff0000ff;
+		vertex[0].m_u = minu;
+		vertex[0].m_v = minv;
+
+		vertex[1].m_x = maxx;
+		vertex[1].m_y = miny;
+		vertex[1].m_z = zz;
+		vertex[1].m_abgr = 0xff00ff00;
+		vertex[1].m_u = maxu;
+		vertex[1].m_v = minv;
+
+		vertex[2].m_x = maxx;
+		vertex[2].m_y = maxy;
+		vertex[2].m_z = zz;
+		vertex[2].m_abgr = 0xffff0000;
+		vertex[2].m_u = maxu;
+		vertex[2].m_v = maxv;
+
+		vertex[3].m_x = minx;
+		vertex[3].m_y = maxy;
+		vertex[3].m_z = zz;
+		vertex[3].m_abgr = 0xffffffff;
+		vertex[3].m_u = minu;
+		vertex[3].m_v = maxv;
+
+		uint16_t* indices = (uint16_t*)tib.data;
+
+		indices[0] = 0;
+		indices[1] = 2;
+		indices[2] = 1;
+		indices[3] = 0;
+		indices[4] = 3;
+		indices[5] = 2;
+
+		bgfx::setProgram(_program);
+		//bgfx::setState(BGFX_STATE_DEFAULT);
+		bgfx::setState(0
+			| BGFX_STATE_RGB_WRITE
+			| BGFX_STATE_ALPHA_WRITE
+			| BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA)
+			);
+		bgfx::setIndexBuffer(&tib);
+		bgfx::setVertexBuffer(&tvb);
+		bgfx::submit(_view);
+	}
+}
+
+void renderScreenSpaceQuad(uint32_t _view, bgfx::ProgramHandle _program, float _x, float _y, float _width, float _height, float minu, float minv, float maxu, float maxv, unsigned int argb)
+{
+	bgfx::TransientVertexBuffer tvb;
+	bgfx::TransientIndexBuffer tib;
+
+	if (allocTransientBuffers(&tvb, s_PosColorTexCoord0Decl, 4, &tib, 6) )
+	{
+		PosColorTexCoord0Vertex* vertex = (PosColorTexCoord0Vertex*)tvb.data;
+
+		float zz = 0.0f;
+
+		const float minx = _x;
+		const float maxx = _x + _width;
+		const float miny = _y;
+		const float maxy = _y + _height;
+
+		vertex[0].m_x = minx;
+		vertex[0].m_y = miny;
+		vertex[0].m_z = zz;
+		vertex[0].m_abgr = argb;
+		vertex[0].m_u = minu;
+		vertex[0].m_v = minv;
+
+		vertex[1].m_x = maxx;
+		vertex[1].m_y = miny;
+		vertex[1].m_z = zz;
+		vertex[1].m_abgr = argb;
+		vertex[1].m_u = maxu;
+		vertex[1].m_v = minv;
+
+		vertex[2].m_x = maxx;
+		vertex[2].m_y = maxy;
+		vertex[2].m_z = zz;
+		vertex[2].m_abgr = argb;
+		vertex[2].m_u = maxu;
+		vertex[2].m_v = maxv;
+
+		vertex[3].m_x = minx;
+		vertex[3].m_y = maxy;
+		vertex[3].m_z = zz;
+		vertex[3].m_abgr = argb;
+		vertex[3].m_u = minu;
+		vertex[3].m_v = maxv;
+
+		uint16_t* indices = (uint16_t*)tib.data;
+
+		indices[0] = 0;
+		indices[1] = 2;
+		indices[2] = 1;
+		indices[3] = 0;
+		indices[4] = 3;
+		indices[5] = 2;
+
+		bgfx::setProgram(_program);
+		//bgfx::setState(BGFX_STATE_DEFAULT);
+		bgfx::setState(0
+			| BGFX_STATE_RGB_WRITE
+			| BGFX_STATE_ALPHA_WRITE
+			| (BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_INV_SRC_ALPHA))
+			);
+		bgfx::setIndexBuffer(&tib);
+		bgfx::setVertexBuffer(&tvb);
+		bgfx::submit(_view);
+	}
+}
+
+void renderScreenSpaceQuad(uint32_t _view, bgfx::ProgramHandle _program, float _pnts[4][2], float minu, float minv, float maxu, float maxv, unsigned int argb)
+{
+	bgfx::TransientVertexBuffer tvb;
+	bgfx::TransientIndexBuffer tib;
+
+	if (allocTransientBuffers(&tvb, s_PosColorTexCoord0Decl, 4, &tib, 6) )
+	{
+		PosColorTexCoord0Vertex* vertex = (PosColorTexCoord0Vertex*)tvb.data;
+
+		float zz = 0.0f;
+
+		vertex[0].m_x = _pnts[0][0];
+		vertex[0].m_y = _pnts[0][1];
+		vertex[0].m_z = zz;
+		vertex[0].m_abgr = argb;
+		vertex[0].m_u = minu;
+		vertex[0].m_v = minv;
+
+		vertex[1].m_x = _pnts[1][0];
+		vertex[1].m_y = _pnts[1][1];
+		vertex[1].m_z = zz;
+		vertex[1].m_abgr = argb;
+		vertex[1].m_u = maxu;
+		vertex[1].m_v = minv;
+
+		vertex[2].m_x = _pnts[2][0];
+		vertex[2].m_y = _pnts[2][1];
+		vertex[2].m_z = zz;
+		vertex[2].m_abgr = argb;
+		vertex[2].m_u = maxu;
+		vertex[2].m_v = maxv;
+
+		vertex[3].m_x = _pnts[3][0];
+		vertex[3].m_y = _pnts[3][1];
+		vertex[3].m_z = zz;
+		vertex[3].m_abgr = argb;
+		vertex[3].m_u = minu;
+		vertex[3].m_v = maxv;
+
+		uint16_t* indices = (uint16_t*)tib.data;
+
+		indices[0] = 0;
+		indices[1] = 2;
+		indices[2] = 1;
+		indices[3] = 0;
+		indices[4] = 3;
+		indices[5] = 2;
+
+		bgfx::setProgram(_program);
+		//bgfx::setState(BGFX_STATE_DEFAULT);
+		bgfx::setState(0
+			| BGFX_STATE_RGB_WRITE
+			| BGFX_STATE_ALPHA_WRITE
+			| (BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA))
+			);
+		bgfx::setIndexBuffer(&tib);
+		bgfx::setVertexBuffer(&tvb);
+		bgfx::submit(_view);
+	}
+}
+
+struct TexturePackerRect
+{
+	int x, y;
+	int w, h;
+};
+
+struct TexturePackerWH
+{
+	int w, h;
+};
+
+struct TexturePackerFrame
+{
+	TexturePackerRect frame;
+	bool rotated;
+	bool trimmed;
+	TexturePackerRect spriteSourceSize;
+	TexturePackerWH	 sourceSize;
+};
+
+struct TexturePacker
+{
+	std::map<std::string,TexturePackerFrame> frames;
+};
+
+void Serialise( Json::Value const &node, TexturePackerRect &rect )
+{
+	Serialise( node["x"], rect.x );
+	Serialise( node["y"], rect.y );
+	Serialise( node["w"], rect.w );
+	Serialise( node["h"], rect.h );
+}
+
+void Serialise( Json::Value const &node, TexturePackerWH &wh )
+{
+	Serialise( node["w"], wh.w );
+	Serialise( node["h"], wh.h );
+}
+
+void Serialise( Json::Value const &node, TexturePackerFrame &frame )
+{
+	Serialise( node["frame"], frame.frame );
+	Serialise( node["rotated"], frame.rotated );
+	Serialise( node["trimmed"], frame.trimmed );
+	Serialise( node["spriteSourceSize"], frame.spriteSourceSize );
+	Serialise( node["sourceSize"], frame.sourceSize );
+
+	frame.spriteSourceSize.y = frame.sourceSize.h-(frame.spriteSourceSize.y+frame.spriteSourceSize.h);
+}
+
+void Serialise( Json::Value const &node, TexturePacker &packer )
+{
+	Serialise( node["frames"], packer.frames );
+}
+
+
+#if 0
+struct Sprite
+{
+	float min_uv[2];
+	float max_uv[2];
+	int dim[2];
+};
+
+struct SubTexture
+{
+	std::string name;
+	float x, y;
+	float width, height;
+
+	float min_uv[2];
+	float max_uv[2];
+};
+
+struct Texture
+{
+	std::string imagePath;
+	std::string name;
+	std::vector<SubTexture> SubTextures;
+};
+
+void Serialise( Json::Value const &node, SubTexture &subtexture, Texture &/*texture*/ )
+{
+	Serialise( node["name"], subtexture.name );
+	Serialise( node["x"], subtexture.x );
+	Serialise( node["y"], subtexture.y );
+	Serialise( node["width"], subtexture.width );
+	Serialise( node["height"], subtexture.height );
+}
+
+void Serialise( Json::Value const &node, Texture &texture )
+{
+	Serialise( node["imagePath"], texture.imagePath );
+	Serialise( node["name"], texture.name );
+	Serialise( node["SubTexture"], texture.SubTextures, texture );
+}
+
+
+struct Transform
+{
+	float skewX, skewY;
+	float scaleX, scaleY;
+	float x, y;
+	float pX, pY;
+};
+
+void Serialise( Json::Value const &node, Transform &transform )
+{
+	Serialise( node["skX"], transform.skewX );
+	Serialise( node["skY"], transform.skewY );
+	Serialise( node["scX"], transform.scaleX );
+	Serialise( node["scY"], transform.scaleY );
+	Serialise( node["x"], transform.x );
+	Serialise( node["y"], transform.y );
+	Serialise( node["pX"], transform.pX );
+	Serialise( node["pY"], transform.pY );
+}
+
+struct ColourTransform
+{
+	float aO, rO, gO, bO;
+	float aM, rM, gM, bM;
+};
+
+void Serialise( Json::Value const &node, ColourTransform &colourTransform )
+{
+	Serialise( node["aO"], colourTransform.aO );
+	Serialise( node["rO"], colourTransform.rO );
+	Serialise( node["gO"], colourTransform.gO );
+	Serialise( node["bO"], colourTransform.bO );
+	Serialise( node["aM"], colourTransform.aM );
+	Serialise( node["rM"], colourTransform.rM );
+	Serialise( node["gM"], colourTransform.gM );
+	Serialise( node["bM"], colourTransform.bM );
+}
+
+struct Matrix2x3
+{
+	float a, b, c, d;
+	float tx, ty;
+};
+
+inline void TransformToMatrix( Transform const &t, Matrix2x3 &m )
+{
+	float radSkewX = DegToRad( t.skewX );
+	float radSkewY = DegToRad( t.skewY );
+	m.a = t.scaleX * cosf( radSkewY );
+	m.b = t.scaleX * sinf( radSkewY );
+	m.c = -t.scaleY * sinf( radSkewX );
+	m.d = t.scaleY * cosf( radSkewX );
+	m.tx = t.x;
+	m.ty = t.y;
+}
+
+struct Display
+{
+	Transform transform;
+	std::string name;
+	std::string type;
+
+	int nameIndex;
+};
+
+struct Slot
+{
+	std::string name;
+	float z;
+	std::vector<Display> displays;
+	std::string parent;
+
+	int parentIndex;
+};
+
+struct Skin
+{
+	std::string name;
+	std::vector<Slot> slots;
+};
+
+struct Bone
+{
+	Transform transform;
+	std::string name;
+	std::string parent;
+
+	int parentIndex;
+};
+
+struct Frame
+{
+	Transform transform;
+	float z;
+	int hide;
+	float tweenEasing;
+	float tweenRotate;
+	int displayIndex;
+	float duration;
+	std::string evt;
+	std::string sound;
+	std::string action;
+};
+
+struct Timeline
+{
+	std::string name;
+	float scale;
+	std::vector<Frame> frames;
+	float offset;
+
+	int nameIndex;
+};
+
+struct Animation
+{
+	std::string name;
+	float scale;
+	int loop;
+	std::vector<Timeline> timeline;
+	float fadeInTime;
+	float duration;
+	float tweenEasing;
+};
+
+struct Armature
+{
+	std::vector<Skin> skins;
+	std::vector<Bone> bones;
+	std::string name;
+	std::vector<Animation> animations;
+};
+
+struct Skeleton
+{
+	int frameRate;
+	std::string name;
+	float version;
+	std::vector<Armature> armature;
+};
+
+void Serialise( Json::Value const &node, Display &display, Armature & /*armature*/, Texture &texture )
+{
+	Serialise( node["transform"], display.transform );
+	Serialise( node["name"], display.name );
+	Serialise( node["type"], display.type );
+
+	display.nameIndex = -1;
+	for (unsigned int i=0; i<texture.SubTextures.size(); i++)
+	{
+		if ( texture.SubTextures[i].name == display.name)
+		{
+			display.nameIndex = i;
+			break;
+		}
+	}
+}
+
+void Serialise( Json::Value const &node, Slot &slot, Armature &armature, Texture &texture )
+{
+	Serialise( node["name"], slot.name );
+	Serialise( node["z"], slot.z );
+	Serialise( node["display"], slot.displays, armature, texture );
+	Serialise( node["parent"], slot.parent );
+
+	slot.parentIndex = -1;
+	for (unsigned int i=0; i<armature.bones.size(); i++)
+	{
+		if ( armature.bones[i].name == slot.parent )
+		{
+			slot.parentIndex = i;
+			break;
+		}
+	}
+}
+
+void Serialise( Json::Value const &node, Skin &skin, Armature &armature, Texture &texture )
+{
+	Serialise( node["name"], skin.name );
+	Serialise( node["slot"], skin.slots, armature, texture );
+}
+
+void Serialise( Json::Value const &node, Bone &bone, Armature &armature )
+{
+	Serialise( node["transform"], bone.transform );
+	Serialise( node["name"], bone.name );
+	Serialise( node["parent"], bone.parent );
+
+	bone.parentIndex = -1;
+	for (unsigned int i=0; i<armature.bones.size(); i++)
+	{
+		if ( armature.bones[i].name == bone.parent )
+		{
+			bone.parentIndex = i;
+			break;
+		}
+	}
+}
+
+void Serialise( Json::Value const &node, Frame &frame, Armature & /*armature*/ )
+{
+	Serialise( node["transform"], frame.transform );
+	Serialise( node["duration"], frame.duration  );
+	Serialise( node["event"], frame.evt  );
+	Serialise( node["sound"], frame.sound  );
+	Serialise( node["action"], frame.action  );
+	Serialise( node["hide"], frame.hide );
+	Serialise( node["tweenEasing"], frame.tweenEasing );
+	Serialise( node["tweenRotate"], frame.tweenRotate );
+	Serialise( node["displayIndex"], frame.displayIndex );
+	Serialise( node["z"], frame.z );
+}
+
+void Serialise( Json::Value const &node, Timeline &timeline, Armature &armature )
+{
+	Serialise( node["name"], timeline.name );
+	Serialise( node["scale"], timeline.scale );
+	Serialise( node["frame"], timeline.frames, armature );
+	Serialise( node["offset"], timeline.offset );
+
+	timeline.nameIndex = -1;
+	for (unsigned int i=0; i<armature.bones.size(); i++)
+	{
+		if ( armature.bones[i].name == timeline.name )
+		{
+			timeline.nameIndex = i;
+			break;
+		}
+	}
+}
+
+void CalcTimeline( std::vector<Transform> &transforms, Timeline &timeline, float time )
+{
+	Transform &transform = transforms[timeline.nameIndex];
+	float currentStartTime = 0.f;
+	for (unsigned int i=1; i<=timeline.frames.size(); i++)
+	{
+		unsigned int prev = i - 1;
+		Frame const &frame0 = timeline.frames[prev];
+		Frame const &frame1 = timeline.frames[(i%timeline.frames.size())];
+
+		float currentEndTime = currentStartTime + frame0.duration;
+
+		if ( time >= currentStartTime && time<currentEndTime )
+		{
+			float dt = (time - currentStartTime)/(currentEndTime-currentStartTime);
+			float invdt = 1.f - dt;
+			transform.pX = frame0.transform.pX * dt + frame1.transform.pX * invdt;
+			transform.pY = frame0.transform.pY * dt + frame1.transform.pY * invdt;
+			transform.scaleX = frame0.transform.scaleX * dt + frame1.transform.scaleX * invdt;
+			transform.scaleY = frame0.transform.scaleY * dt + frame1.transform.scaleY * invdt;
+			transform.skewX = frame0.transform.skewX * dt + frame1.transform.skewX * invdt;
+			transform.skewY = frame0.transform.skewY * dt + frame1.transform.skewY * invdt;
+			transform.x = frame0.transform.x * dt + frame1.transform.x * invdt;
+			transform.y = frame0.transform.y * dt + frame1.transform.y * invdt;
+			break;
+		}
+
+		currentStartTime = currentEndTime;
+	}
+}
+
+void Serialise( Json::Value const &node, Animation &animation, Armature &armature )
+{
+	Serialise( node["name"], animation.name );
+	Serialise( node["scale"], animation.scale );
+	Serialise( node["loop"], animation.loop );
+	Serialise( node["timeline"], animation.timeline, armature );
+	Serialise( node["fadeInTime"], animation.fadeInTime );
+	Serialise( node["duration"], animation.duration );
+	Serialise( node["tweenEasing"], animation.tweenEasing );
+}
+
+void CalcAnimation( std::vector<Transform> &transforms, Animation &animation, float time )
+{
+	for (unsigned int i=0; i<animation.timeline.size(); i++)
+	{
+		CalcTimeline( transforms, animation.timeline[i], time );
+	}
+}
+
+void Serialise( Json::Value const &node, Armature &armature, Skeleton & /*skel*/, Texture &texture )
+{
+	Serialise( node["name"], armature.name );
+	Serialise( node["bone"], armature.bones, armature );
+
+	Serialise( node["skin"], armature.skins, armature, texture );
+	Serialise( node["animation"], armature.animations, armature );
+}
+
+void DisplaySkin( Texture &texture, Skin &skin, std::vector<Transform> &transforms, bgfx::ProgramHandle raymarching, bgfx::UniformHandle u_texColor, bgfx::TextureHandle textureColor )
+{
+	(void)texture;
+	(void)transforms;
+	for ( unsigned int i=0; i<skin.slots.size(); i++ )
+	{
+		Slot &slot = skin.slots[i];
+		Transform &transform = transforms[slot.parentIndex];
+
+		if ( slot.z > 4 )
+			continue;
+
+		for (unsigned int j=0; j<slot.displays.size(); j++)
+		{
+			Display &display = slot.displays[j];
+			SubTexture &subtexture = texture.SubTextures[display.nameIndex];
+			
+			bgfx::setTexture(0, u_texColor, textureColor);
+			renderScreenSpaceQuad(1,raymarching, transform.x, transform.y, subtexture.width, subtexture.height, subtexture.min_uv[0], subtexture.min_uv[1], subtexture.max_uv[0], subtexture.max_uv[1], 0xffffffff );
+		}
+	}
+}
+
+void DisplayArmature( Texture &texture, Armature &armature, std::string const &skinname, std::string const &animname, float time, bgfx::ProgramHandle raymarching, bgfx::UniformHandle u_texColor, bgfx::TextureHandle textureColor )
+{
+	int skinIndex = -1;
+	for (unsigned int s=0; s<armature.skins.size(); s++)
+	{
+		if ( armature.skins[s].name != skinname )
+			continue;
+		skinIndex = s;
+		break;
+	}
+
+	if ( skinIndex == -1 )
+		return;
+
+	for (unsigned int a=0; a<armature.animations.size(); a++)
+	{
+		if ( armature.animations[a].name != animname )
+			continue;
+
+		std::vector<Transform> transforms(armature.bones.size());
+		CalcAnimation( transforms, armature.animations[a], fmodf( time, armature.animations[a].duration ) );
+		DisplaySkin( texture, armature.skins[skinIndex], transforms, raymarching, u_texColor, textureColor );
+		return;
+	}
+
+}
+
+void Serialise( Json::Value const &node, Skeleton &skel, Texture &texture )
+{
+	Serialise( node["frameRate"], skel.frameRate );
+	Serialise( node["name"], skel.name );
+	Serialise( node["version"], skel.version );
+	Serialise( node["armature"], skel.armature, skel, texture );
+}
+
+void DisplaySkeleton( Texture &texture, Skeleton &skeleton, std::string const &skinname, std::string const &animname, float time, bgfx::ProgramHandle raymarching, bgfx::UniformHandle u_texColor, bgfx::TextureHandle textureColor )
+{
+	for ( unsigned int a=0; a<skeleton.armature.size(); a++)
+	{
+		DisplayArmature( texture, skeleton.armature[a], skinname, animname, time, raymarching, u_texColor, textureColor );
+	}
+}
+#endif
+
+#if 1
+struct SpriterFile
+{
+	std::string name;
+	float pivotX, pivotY;
+	float width, height;
+};
+
+struct SpriterFolder
+{
+	std::string name;
+	std::vector<SpriterFile> files;
+};
+
+struct SpriterMapInstruction
+{
+	int folder;
+	int file;
+	int tarFolder;
+	int tarFile;
+};
+
+struct SpriterCharacterMap
+{
+	std::string name;
+	std::vector<SpriterMapInstruction> maps;
+};
+
+struct SpriterRef
+{
+	int parent;
+	int timeline;
+	int key;
+};
+
+struct SpriterMainlineKey
+{
+	int time;
+	std::vector<SpriterRef> boneRefs;
+	std::vector<SpriterRef> objectRefs;
+};
+
+struct SpriterSpacial
+{
+	float x, y;
+	float angle;
+	float sX, sY;
+};
+
+void mul( SpriterSpacial &out, SpriterSpacial const &a, SpriterSpacial const &parentInfo )
+{
+	out.angle = a.angle + parentInfo.angle;
+    out.sX = a.sX * parentInfo.sX;
+    out.sY = a.sY * parentInfo.sY;
+
+    if(a.x!=0||a.y!=0)  
+    {
+        float preMultX=a.x*parentInfo.sX;
+        float preMultY=a.y*parentInfo.sY;
+        float s = sin((parentInfo.angle));
+        float c = cos((parentInfo.angle));
+        out.x = (preMultX * c) - (preMultY * s);
+        out.y = (preMultX * s) + (preMultY * c);
+        out.x+=parentInfo.x;
+        out.y+=parentInfo.y;
+    }
+    else 
+    {
+        // Mandatory optimization for future features           
+        out.x=parentInfo.x;
+        out.y=parentInfo.y;
+    }
+}
+
+void lerp( SpriterSpacial &out, SpriterSpacial const &a, SpriterSpacial const &b, float dt )
+{
+	float invdt = 1.f - dt;
+	out.x = invdt * a.x + dt * b.x;
+	out.y = invdt * a.y + dt * b.y;
+	out.sX = invdt * a.sX + dt * b.sX;
+	out.sY = invdt * a.sY + dt * b.sY;
+	out.angle = InterpAngle( b.angle, a.angle, dt );
+}
+
+
+struct SpriterTimelineKey
+{
+	int time;
+	SpriterSpacial spacial;
+	int folder;
+	int file;
+};
+
+struct SpriterTimeline
+{
+	std::string name;
+	int objectType;
+	std::vector<SpriterTimelineKey> keys;
+};
+
+struct SpriterAnimation
+{
+	std::string name;
+	float length;
+	int loopType;
+	std::vector<SpriterMainlineKey> mainlineKeys;
+	std::vector<SpriterTimeline> timelines;
+};
+
+struct SpriterObjInfo
+{
+	std::string name;
+	int w, h;
+};
+
+struct SpriterEntity
+{
+	std::string name;
+	std::vector<SpriterObjInfo> boneObjInfo;
+	std::vector<SpriterCharacterMap> characterMaps;
+	std::vector<SpriterAnimation> animations;
+};
+
+struct SpriterObject
+{
+	unsigned int maxBones;
+	std::vector<SpriterFolder> folders;
+	std::vector<SpriterEntity> entities;
+	std::vector<SpriterFolder> activeCharacterMap;
+};
+
+template <class T>
+void Serialise( pugi::xml_node node, const char *name, std::vector<T> &val )
+{
+	pugi::xml_node c = node.child( name );
+	while ( c )
+	{
+		val.push_back( T() );
+		T &v = val.back();
+		Serialise( c, v );
+		c = c.next_sibling( name );
+	}
+}
+
+template <class T, class P0>
+void Serialise( pugi::xml_node node, const char *name, std::vector<T> &val, P0 &p0 )
+{
+	pugi::xml_node c = node.child( name );
+	while ( c )
+	{
+		val.push_back( T() );
+		T &v = val.back();
+		Serialise( c, v, p0 );
+		c = c.next_sibling( name );
+	}
+}
+
+template <class T, class Predicate>
+void SerialisePredicate( pugi::xml_node node, const char *name, std::vector<T> &val, Predicate const &p )
+{
+	pugi::xml_node c = node.child( name );
+	while ( c )
+	{
+		if ( p(c) )
+		{
+			val.push_back( T() );
+			T &v = val.back();
+			Serialise( c, v );
+		}
+		c = c.next_sibling( name );
+	}
+}
+
+void Serialise( pugi::xml_attribute attr, bool &val )
+{
+	if ( !attr )
+	{
+		val = false;
+		return;
+	}
+	val = attr.as_bool();
+}
+
+void Serialise( pugi::xml_attribute attr, int &val, int def=0 )
+{
+	if ( !attr )
+	{
+		val = def;
+		return;
+	}
+	val = attr.as_int();
+}
+
+void Serialise( pugi::xml_attribute attr, float &val, float def = 0.f )
+{
+	if ( !attr )
+	{
+		val = def;
+		return;
+	}
+	val = attr.as_float();
+}
+
+void Serialise( pugi::xml_attribute attr, std::string &val )
+{
+	if ( !attr )
+	{
+		val = "";
+		return;
+	}
+	val = attr.as_string();
+}
+
+void Serialise( pugi::xml_node node, SpriterFile &spriteFile )
+{
+	Serialise( node.attribute("name"), spriteFile.name );
+	Serialise( node.attribute("pivot_x"), spriteFile.pivotX );
+	Serialise( node.attribute("pivot_y"), spriteFile.pivotY );
+	Serialise( node.attribute("width"), spriteFile.width );
+	Serialise( node.attribute("height"), spriteFile.height );
+}
+
+void Serialise( pugi::xml_node node, SpriterFolder &spriteFolder )
+{
+	Serialise( node.attribute("name"), spriteFolder.name );
+	Serialise( node, "file", spriteFolder.files );
+}
+
+void Serialise( pugi::xml_node node, SpriterTimelineKey &spriteTimelineKey )
+{
+	Serialise( node.attribute("time"), spriteTimelineKey.time );
+	pugi::xml_node bone = node.child("bone");
+	if ( bone )
+	{
+		Serialise( bone.attribute("x"), spriteTimelineKey.spacial.x );
+		Serialise( bone.attribute("y"), spriteTimelineKey.spacial.y );
+		Serialise( bone.attribute("scale_x"), spriteTimelineKey.spacial.sX, 1.f );
+		Serialise( bone.attribute("scale_y"), spriteTimelineKey.spacial.sY, 1.f );
+		Serialise( bone.attribute("angle"), spriteTimelineKey.spacial.angle );
+		spriteTimelineKey.file = -1;
+		spriteTimelineKey.folder = -1;
+	}
+	pugi::xml_node object = node.child("object");
+	if ( object )
+	{
+		Serialise( object.attribute("x"), spriteTimelineKey.spacial.x );
+		Serialise( object.attribute("y"), spriteTimelineKey.spacial.y );
+		Serialise( object.attribute("scale_x"), spriteTimelineKey.spacial.sX, 1.f );
+		Serialise( object.attribute("scale_y"), spriteTimelineKey.spacial.sY, 1.f );
+		Serialise( object.attribute("angle"), spriteTimelineKey.spacial.angle );
+		Serialise( object.attribute("file"), spriteTimelineKey.file );
+		Serialise( object.attribute("folder"), spriteTimelineKey.folder );
+	}
+	spriteTimelineKey.spacial.angle = DegToRad( spriteTimelineKey.spacial.angle );
+}
+
+void Serialise( pugi::xml_node node, SpriterTimeline &spriteTimeline, SpriterAnimation &anim )
+{
+	Serialise( node.attribute("name"), spriteTimeline.name );
+	Serialise( node, "key", spriteTimeline.keys );
+	spriteTimeline.keys.push_back( spriteTimeline.keys[0] );
+	spriteTimeline.keys.back().time = (int)anim.length;
+}
+
+class WhereAttributeEquals
+{
+	std::string attr;
+	std::string value;
+public:
+	WhereAttributeEquals( const char *a, const char *v ) : attr(a), value(v) {}
+
+	inline bool operator()(pugi::xml_node node) const
+	{
+		return node.attribute(attr.c_str()).as_string() == value;
+	}
+};
+
+void Serialise( pugi::xml_node node, SpriterRef &ref )
+{
+	Serialise( node.attribute("parent"), ref.parent, -1 );
+	Serialise( node.attribute("timeline"), ref.timeline );
+	Serialise( node.attribute("key"), ref.key );
+}
+
+void Serialise( pugi::xml_node node, SpriterMainlineKey &spriterMainline, SpriterObject &spriter )
+{
+	Serialise( node.attribute("time"), spriterMainline.time );
+	Serialise( node, "bone_ref", spriterMainline.boneRefs );
+	Serialise( node, "object_ref", spriterMainline.objectRefs );
+	if ( spriterMainline.boneRefs.size() > spriter.maxBones )
+		spriter.maxBones = spriterMainline.boneRefs.size();
+}
+
+void Serialise( pugi::xml_node node, SpriterAnimation &spriteAnimation, SpriterObject &spriter )
+{
+	Serialise( node.attribute("name"), spriteAnimation.name );
+	Serialise( node.attribute("length"), spriteAnimation.length );
+	Serialise( node.attribute("loopType"), spriteAnimation.loopType );
+	Serialise( node.child("mainline"), "key", spriteAnimation.mainlineKeys, spriter );
+	Serialise( node, "timeline", spriteAnimation.timelines, spriteAnimation );
+}
+
+void Serialise( pugi::xml_node node, SpriterObjInfo &spriterObjInfo )
+{
+	Serialise( node.attribute("name"), spriterObjInfo.name );
+	Serialise( node.attribute("w"), spriterObjInfo.w );
+	Serialise( node.attribute("h"), spriterObjInfo.h );
+}
+
+void Serialise( pugi::xml_node node, SpriterEntity &spriteEntity, SpriterObject &spriter )
+{
+	Serialise( node.attribute("name"), spriteEntity.name );
+	SerialisePredicate( node, "obj_info", spriteEntity.boneObjInfo, WhereAttributeEquals("type","bone") );
+	Serialise( node, "animation", spriteEntity.animations, spriter );
+}
+
+void Serialise( pugi::xml_node node, SpriterObject &spriter )
+{
+	spriter.maxBones = 0;
+	Serialise( node, "folder", spriter.folders );
+	Serialise( node, "entity", spriter.entities, spriter );
+
+	//Serialise( node, "activeCharacterMap", activeCharacterMap );
+}
+
+void SampleAnimation( SpriterSpacial *local, SpriterAnimation &anim, float t )
+{
+	float ms = fmodf( t * 1000.f, anim.length );
+	unsigned int mainlineIndex = 0;
+	while ( (mainlineIndex+1) < anim.mainlineKeys.size() && ms > anim.mainlineKeys[mainlineIndex+1].time )
+		mainlineIndex++;
+	SpriterMainlineKey &mlkey = anim.mainlineKeys[mainlineIndex];
+	for (unsigned int i=0; i<mlkey.boneRefs.size(); i++)
+	{
+		SpriterRef &ref = mlkey.boneRefs[i];
+		SpriterTimeline &timeline = anim.timelines[ref.timeline];
+		SpriterSpacial &sample = local[i];
+		sample = timeline.keys[0].spacial;
+
+		for (unsigned int j=1; j<timeline.keys.size(); j++)
+		{
+			SpriterTimelineKey &pk = timeline.keys[j-1];
+			SpriterTimelineKey &ck = timeline.keys[j];
+			if ( ms >= pk.time && ms < ck.time )
+			{
+				float dt = (ms - pk.time) / (ck.time-pk.time);
+				lerp( sample, pk.spacial, ck.spacial, dt );
+				break;
+			}
+		}
+	}
+}
+
+void SampleAnimation( SpriterSpacial *local, SpriterEntity &ent, std::string const &animName, float t )
+{
+	for (unsigned int i=0; i<ent.animations.size(); i++)
+	{
+		if ( ent.animations[i].name != animName )
+			continue;
+
+		SampleAnimation( local, ent.animations[i], t );
+	}
+}
+
+void SampleAnimation( SpriterSpacial *local, SpriterObject &spriter, std::string const &entityName, std::string const &animName, float t )
+{
+	for (unsigned int i=0; i<spriter.entities.size(); i++)
+	{
+		if ( spriter.entities[i].name != entityName )
+			continue;
+		SampleAnimation( local, spriter.entities[i], animName, t );
+		break;
+	}
+}
+
+void LocalToWorld( SpriterSpacial *world, SpriterSpacial *local, SpriterAnimation &anim, float /*t*/ )
+{
+	int mainlineIndex = 0;
+	SpriterMainlineKey &mlkey = anim.mainlineKeys[mainlineIndex];
+
+	for (unsigned int i=0; i<mlkey.boneRefs.size(); i++)
+	{
+		SpriterRef &ref = mlkey.boneRefs[i];
+		if ( ref.parent == -1 )
+		{
+			world[i] = local[i];
+			continue;
+		}
+
+		mul( world[i], local[i], world[ref.parent] );
+	}
+}
+
+void LocalToWorld( SpriterSpacial *world, SpriterSpacial *local, SpriterEntity &ent, std::string const &animName, float t )
+{
+	for (unsigned int i=0; i<ent.animations.size(); i++)
+	{
+		if ( ent.animations[i].name != animName )
+			continue;
+
+		LocalToWorld( world, local, ent.animations[i], t );
+		break;
+	}
+}
+
+void LocalToWorld( SpriterSpacial *world, SpriterSpacial *local, SpriterObject &spriter, std::string const &entityName, std::string const &animName, float t )
+{
+	for (unsigned int i=0; i<spriter.entities.size(); i++)
+	{
+		if ( spriter.entities[i].name != entityName )
+			continue;
+		LocalToWorld( world, local, spriter.entities[i], animName, t );
+		break;
+	}
+}
+
+void DisplaySkin( SpriterSpacial *world, SpriterAnimation &anim, SpriterObject &spriter, float t, TexturePacker const &texture, bgfx::ProgramHandle raymarching, bgfx::UniformHandle u_texColor, bgfx::TextureHandle textureColor, float tw, float th )
+{
+	float ms = fmodf( t * 1000.f, anim.length );
+	unsigned int mainlineIndex = 0;
+	while ( (mainlineIndex+1) < anim.mainlineKeys.size() && ms > anim.mainlineKeys[mainlineIndex+1].time )
+		mainlineIndex++;
+	SpriterMainlineKey &mlkey = anim.mainlineKeys[mainlineIndex];
+
+	for (unsigned int i=0; i<mlkey.objectRefs.size(); i++)
+	{
+		SpriterRef &ref = mlkey.objectRefs[i];
+		SpriterTimeline &timeline = anim.timelines[ref.timeline];
+		int file = timeline.keys[0].file;
+		int folder = timeline.keys[0].folder;
+		SpriterSpacial sample = timeline.keys[0].spacial;
+
+		for (unsigned int j=1; j<timeline.keys.size(); j++)
+		{
+			SpriterTimelineKey &pk = timeline.keys[j-1];
+			SpriterTimelineKey &ck = timeline.keys[j];
+			if ( ms >= pk.time && ms < ck.time )
+			{
+				file = pk.file;
+				folder = pk.folder;
+				float dt = (ms - pk.time) / (ck.time-pk.time);
+				lerp( sample, pk.spacial, ck.spacial, dt );
+				break;
+			}
+		}
+		if ( file == -1 || folder == -1 )
+			continue;
+		SpriterFile const &fileInfo = spriter.folders[folder].files[file];
+
+		
+		std::map<std::string,TexturePackerFrame>::const_iterator tf = texture.frames.find(fileInfo.name);
+		if ( tf == texture.frames.end() )
+			continue;
+
+		TexturePackerFrame const &f = tf->second;
+
+		SpriterSpacial finalTM;
+		if ( ref.parent != -1 )
+		{
+			SpriterSpacial const &tm = world[ref.parent];
+			mul( finalTM, sample, tm );
+		}
+		else
+		{
+			finalTM = sample;
+		}
+
+		float ssw = (f.sourceSize.w-1.f);
+		float ssh = (f.sourceSize.h-1.f);
+		float fw = (fileInfo.width-1.f);
+		float fh = (fileInfo.height-1.f);
+		float left_x = ((f.spriteSourceSize.x / ssw)-fileInfo.pivotX)*fw;
+		float top_y = ((f.spriteSourceSize.y / ssh)-fileInfo.pivotY)*fh;
+		float right_x = (((f.spriteSourceSize.x+f.spriteSourceSize.w-1.f) / ssw)-fileInfo.pivotX)*fw;
+		float bottom_y = (((f.spriteSourceSize.y+f.spriteSourceSize.h-1.f) / ssh)-fileInfo.pivotY)*fh;
+
+		float pnts[4][2];
+        float s = sin((finalTM.angle));
+        float c = cos((finalTM.angle));
+		pnts[0][0] = (left_x * c) - (top_y * s) + finalTM.x; pnts[0][1] = (left_x * s) + (top_y * c) + finalTM.y;
+		pnts[1][0] = (right_x * c) - (top_y * s) + finalTM.x; pnts[1][1] = (right_x * s) + (top_y * c) + finalTM.y;
+		pnts[2][0] = (right_x * c) - (bottom_y * s) + finalTM.x; pnts[2][1] = (right_x * s) + (bottom_y * c) + finalTM.y;
+		pnts[3][0] = (left_x * c) - (bottom_y * s) + finalTM.x; pnts[3][1] = (left_x * s) + (bottom_y * c) + finalTM.y;
+
+		bgfx::setTexture(0, u_texColor, textureColor);
+		renderScreenSpaceQuad(1,raymarching, pnts,
+			(f.frame.x) / tw, (f.frame.y+f.frame.h-1.f) / th,
+			(f.frame.x+f.frame.w-1.f) / tw, (f.frame.y) / th,
+			0xffffffff );
+	}
+}
+
+void DisplaySkin( SpriterSpacial *world, SpriterEntity &ent, SpriterObject &spriter, std::string const &animName, float t, TexturePacker const &texture, bgfx::ProgramHandle raymarching, bgfx::UniformHandle u_texColor, bgfx::TextureHandle textureColor, float tw, float th )
+{
+	for (unsigned int i=0; i<ent.animations.size(); i++)
+	{
+		if ( ent.animations[i].name != animName )
+			continue;
+
+		DisplaySkin( world, ent.animations[i], spriter, t, texture, raymarching, u_texColor, textureColor, tw, th );
+		break;
+	}
+}
+
+void DisplaySkin( SpriterSpacial *world, SpriterObject &spriter, std::string const &entityName, std::string const &animName, float t, TexturePacker const &texture, bgfx::ProgramHandle raymarching, bgfx::UniformHandle u_texColor, bgfx::TextureHandle textureColor, float tw, float th )
+{
+	for (unsigned int i=0; i<spriter.entities.size(); i++)
+	{
+		if ( spriter.entities[i].name != entityName )
+			continue;
+		DisplaySkin( world, spriter.entities[i], spriter, animName, t, texture, raymarching, u_texColor, textureColor, tw, th );
+		break;
+	}
+}
+#endif
+
+#if 1
+
+
+struct Bone
+{
+	std::string name;
+	std::string parent;
+	float length, x, y, rotation;
+
+	int parentIndex;
+};
+
+struct Slot
+{
+	std::string name;
+	std::string bone;
+	std::string attachment;
+
+	int boneIndex;
+};
+
+struct SkinFrame
+{
+	float x;
+	float y;
+	float rotation;
+	float width;
+	float height;
+};
+
+struct SkinEntry
+{
+	std::vector<std::pair<std::string,SkinFrame>> skinFrames;
+};
+
+struct Skin
+{
+	std::vector<std::pair<std::string,SkinEntry>> skinEntries;
+	
+	std::vector<int> skinSlotIndex;
+};
+
+struct RotateKey
+{
+	float time;
+	float angle;
+};
+
+struct TranslateKey
+{
+	float time;
+	float x, y;
+};
+
+struct BoneTimeline
+{
+	std::vector<RotateKey> rotateKeys;
+	std::vector<TranslateKey> translateKeys;
+};
+
+struct Animation
+{
+	std::vector<std::pair<std::string,BoneTimeline>> boneTimeline;
+	
+	std::vector<int> boneMapping;
+};
+
+struct Spine
+{
+	std::vector<Bone> bones;
+	std::vector<Slot> slots;
+	std::map<std::string,Skin> skins;
+	std::map<std::string,Animation> animations;
+};
+
+void Serialise( Json::Value const &node, Bone &bone, Spine &spine )
+{
+	Serialise( node["name"], bone.name );
+	Serialise( node["parent"], bone.parent );
+	Serialise( node["length"], bone.length );
+	Serialise( node["x"], bone.x );
+	Serialise( node["y"], bone.y );
+	Serialise( node["rotation"], bone.rotation );
+
+	bone.parentIndex = -1;
+	for (unsigned int i=0; i<spine.bones.size(); i++)
+	{
+		if ( bone.parent == spine.bones[i].name )
+		{
+			bone.parentIndex = i;
+			break;
+		}
+	}
+}
+
+void Serialise( Json::Value const &node, Slot &slot, Spine &spine )
+{
+	Serialise( node["name"], slot.name );
+	Serialise( node["bone"], slot.bone );
+	Serialise( node["attachment"], slot.attachment );
+
+	slot.boneIndex = -1;
+	for (unsigned int i=0; i<spine.bones.size(); i++)
+	{
+		if ( slot.bone == spine.bones[i].name )
+		{
+			slot.boneIndex = i;
+			break;
+		}
+	}
+}
+
+void Serialise( Json::Value const &node, SkinFrame &skinFrame )
+{
+	Serialise( node["x"], skinFrame.x );
+	Serialise( node["y"],  skinFrame.y );
+	Serialise( node["rotation"], skinFrame.rotation );
+	Serialise( node["width"], skinFrame.width );
+	Serialise( node["height"], skinFrame.height );
+}
+
+void Serialise( Json::Value const &node, SkinEntry &skinEntry )
+{
+	Serialise( node, skinEntry.skinFrames );
+}
+
+void Serialise( Json::Value const &node, Skin &skin, Spine &spine )
+{
+	Serialise( node, skin.skinEntries );
+
+	skin.skinSlotIndex.resize( skin.skinEntries.size(), -1 );
+	for (unsigned int i=0; i<skin.skinEntries.size(); i++)
+	{
+		for (unsigned int j=0; j<spine.slots.size(); j++)
+		{
+			if ( skin.skinEntries[i].first == spine.slots[j].name )
+			{
+				skin.skinSlotIndex[i] = j;
+				break;
+			}
+		}
+	}
+}
+
+void Serialise( Json::Value const &node, RotateKey &rotateKey )
+{
+	Serialise( node["time"], rotateKey.time );
+	Serialise( node["angle"], rotateKey.angle );
+}
+
+void Serialise( Json::Value const &node, TranslateKey &translateKey )
+{
+	Serialise( node["time"], translateKey.time );
+	Serialise( node["x"], translateKey.x );
+	Serialise( node["y"], translateKey.y );
+}
+
+void Serialise( Json::Value const &node, BoneTimeline &boneTimeline )
+{
+	Serialise( node["rotate"], boneTimeline.rotateKeys );
+	Serialise( node["translate"], boneTimeline.translateKeys );
+}
+
+void Serialise( Json::Value const &node, Animation &animation, Spine &spine )
+{
+	Serialise( node["bones"], animation.boneTimeline );
+
+	animation.boneMapping.resize(animation.boneTimeline.size(),-1);
+	for (unsigned int i=0; i<animation.boneTimeline.size(); i++)
+	{
+		for (unsigned int j=0; j<spine.bones.size(); j++)
+		{
+			if ( animation.boneTimeline[i].first == spine.bones[j].name )
+			{
+				animation.boneMapping[i] = j;
+				break;
+			}
+		}
+	}
+}
+
+void Serialise( Json::Value const &node, Spine &spine )
+{
+	Serialise( node["bones"], spine.bones, spine );
+	Serialise( node["slots"], spine.slots, spine );
+	Serialise( node["skins"], spine.skins, spine );
+	Serialise( node["animations"], spine.animations, spine );
+}
+
+void SampleAnimation( Matrix2x3 *local, Animation const &anim, Spine &spine, float t )
+{
+	for (unsigned int i=0; i<anim.boneTimeline.size(); i++)
+	{
+		BoneTimeline const &timeline = anim.boneTimeline[i].second;
+		int index = anim.boneMapping[i];
+		Matrix2x3 &mtx = local[index];
+
+		float angle = 0.f;
+		float x = 0.f;
+		float y = 0.f;
+		if ( index != -1 )
+		{
+			Bone &bone = spine.bones[index];
+			angle += bone.rotation;
+			x += bone.x;
+			y += bone.y;
+		}
+		
+		if ( timeline.rotateKeys.size() )
+		{
+			float rt = fmodf( t, timeline.rotateKeys[timeline.rotateKeys.size()-1].time );
+			for (unsigned int j=1; j<timeline.rotateKeys.size(); j++)
+			{
+				RotateKey const &pk = timeline.rotateKeys[j-1];
+				RotateKey const &ck = timeline.rotateKeys[j];
+				if ( rt >= pk.time && rt < ck.time )
+				{
+					float dt = (rt - pk.time) / ( ck.time - pk.time );
+					angle += InterpAngle( ck.angle, pk.angle, dt );
+					break;
+				}
+			}
+		}
+		if ( timeline.translateKeys.size() )
+		{
+			float tt = fmodf( t, timeline.translateKeys[timeline.translateKeys.size()-1].time );
+			for (unsigned int j=1; j<timeline.translateKeys.size(); j++)
+			{
+				TranslateKey const &pk = timeline.translateKeys[j-1];
+				TranslateKey const &ck = timeline.translateKeys[j];
+				if ( tt >= pk.time && tt < ck.time )
+				{
+					float dt = (tt - pk.time) / ( ck.time - pk.time );
+					float invdt = 1.f - dt;
+					x += invdt * pk.x + dt * ck.x;
+					y += invdt * pk.y + dt * ck.y;
+					break;
+				}
+			}
+		}
+		float radAngle = DegToRad( angle );
+		mtx.f[0][0] = cosf(radAngle);
+		mtx.f[0][1] = sinf(radAngle);
+		mtx.f[1][0] = -sinf(radAngle);
+		mtx.f[1][1] = cosf(radAngle);
+		mtx.f[2][0] = x;
+		mtx.f[2][1] = y;
+	}
+}
+
+void SampleAnimation( Matrix2x3 *world, Spine &spine, std::string const &animName, float t )
+{
+	for (unsigned int i=0; i<spine.bones.size(); i++)
+	{
+		Bone &bone = spine.bones[i];
+		Matrix2x3 &mtx = world[i];
+		float radAngle = DegToRad( bone.rotation );
+		mtx.f[0][0] = cosf(radAngle);
+		mtx.f[0][1] = sinf(radAngle);
+		mtx.f[1][0] = -sinf(radAngle);
+		mtx.f[1][1] = cosf(radAngle);
+		mtx.f[2][0] = bone.x;
+		mtx.f[2][1] = bone.y;
+	}
+	std::map<std::string,Animation>::const_iterator f = spine.animations.find(animName);
+	if ( f == spine.animations.end() )
+		return;
+
+	SampleAnimation( world, f->second, spine, t );
+}
+
+
+void LocalToWorld( Matrix2x3 *world, Matrix2x3 *local, Spine &spine )
+{
+	for (unsigned int i=0; i<spine.bones.size(); i++)
+	{
+		Bone const &bone = spine.bones[i];
+		if ( bone.parentIndex == -1 )
+		{
+			world[i] = local[i];
+			continue;
+		}
+
+		mul( world[i], local[i], world[bone.parentIndex] );
+	}
+}
+
+void DisplaySkin( Matrix2x3 *world, Spine &spine, std::string const &skinName, TexturePacker const &texture, bgfx::ProgramHandle raymarching, bgfx::UniformHandle u_texColor, bgfx::TextureHandle textureColor, float tw, float th )
+{
+	std::map<std::string,Skin>::const_iterator f = spine.skins.find(skinName);
+	if ( f == spine.skins.end() )
+		return;
+
+	Skin const &skin = f->second;
+	for (unsigned int i=0; i<skin.skinEntries.size(); i++)
+	{
+		SkinEntry const &se = skin.skinEntries[i].second;
+		if ( se.skinFrames.empty() )
+			continue;
+		int slotIndex = skin.skinSlotIndex[i];
+		if ( slotIndex == -1 )
+			continue;
+		int mtxIndex = spine.slots[slotIndex].boneIndex;
+		if ( mtxIndex == -1 )
+			continue;
+		Matrix2x3 &tm = world[mtxIndex];
+		SkinFrame const &sf = se.skinFrames[0].second;
+		
+		std::map<std::string,TexturePackerFrame>::const_iterator tf = texture.frames.find(se.skinFrames[0].first);
+		if ( tf == texture.frames.end() )
+			continue;
+
+		Matrix2x3 spriteTM;
+		float radAngle = DegToRad( sf.rotation );
+		spriteTM.f[0][0] = cosf(radAngle);
+		spriteTM.f[0][1] = sinf(radAngle);
+		spriteTM.f[1][0] = -sinf(radAngle);
+		spriteTM.f[1][1] = cosf(radAngle);
+		spriteTM.f[2][0] = sf.x;
+		spriteTM.f[2][1] = sf.y;
+
+		Matrix2x3 finalTM;
+		mul( finalTM, spriteTM, tm );
+
+		float hw = sf.width / 2.f;
+		float hh = sf.height / 2.f;
+		float pnts[4][2];
+		mul( pnts[0], -hw, -hh, finalTM );
+		mul( pnts[1], hw, -hh, finalTM );
+		mul( pnts[2], hw, hh, finalTM );
+		mul( pnts[3], -hw, hh, finalTM );
+
+		TexturePackerFrame const &f = tf->second;
+
+		bgfx::setTexture(0, u_texColor, textureColor);
+		renderScreenSpaceQuad(1,raymarching, pnts,
+			(f.frame.x) / tw, (f.frame.y+f.frame.h) / th,
+			(f.frame.x+f.frame.w) / tw, (f.frame.y) / th,
+			0xffffffff );
+	}
+}
+#endif
+
+
+
+
+
+/*                        matrix.a = transform.scaleX * Math.cos(deg2rad(transform.skewY));
+                        matrix.b = transform.scaleX * Math.sin(deg2rad(transform.skewY));
+                        matrix.c = -transform.scaleY * Math.sin(deg2rad(transform.skewX));
+                        matrix.d = transform.scaleY * Math.cos(deg2rad(transform.skewX));
+                        matrix.tx = transform.x;
+                        matrix.ty = transform.y;*/
+
+int _main_(int /*_argc*/, char** /*_argv*/)
+{
+	uint32_t width = 1280;
+	uint32_t height = 720;
+	uint32_t debug = BGFX_DEBUG_TEXT;
+	uint32_t reset = BGFX_RESET_VSYNC;
+
+	bgfx::init();
+	bgfx::reset(width, height, reset);
+
+	// Enable debug text.
+	bgfx::setDebug(debug);
+
+	// Set view 0 clear state.
+	bgfx::setViewClear(0
+		, BGFX_CLEAR_COLOR_BIT|BGFX_CLEAR_DEPTH_BIT
+		, 0x303030ff
+		, 1.0f
+		, 0
+		);
+
+	// Setup root path for binary shaders. Shader binaries are different 
+	// for each renderer.
+	switch (bgfx::getRendererType() )
+	{
+	default:
+	case bgfx::RendererType::Direct3D9:
+		s_shaderPath = "shaders/dx9/";
+		break;
+
+	case bgfx::RendererType::Direct3D11:
+		s_shaderPath = "shaders/dx11/";
+		break;
+
+	case bgfx::RendererType::OpenGL:
+		s_shaderPath = "shaders/glsl/";
+		s_flipV = true;
+		break;
+
+	case bgfx::RendererType::OpenGLES2:
+	case bgfx::RendererType::OpenGLES3:
+		s_shaderPath = "shaders/gles/";
+		s_flipV = true;
+		break;
+	}
+
+	// Create vertex stream declaration.
+	s_PosColorTexCoord0Decl.begin();
+	s_PosColorTexCoord0Decl.add(bgfx::Attrib::Position, 3, bgfx::AttribType::Float);
+	s_PosColorTexCoord0Decl.add(bgfx::Attrib::Color0, 4, bgfx::AttribType::Uint8, true);
+	s_PosColorTexCoord0Decl.add(bgfx::Attrib::TexCoord0, 2, bgfx::AttribType::Float);
+	s_PosColorTexCoord0Decl.end();  
+
+	//bgfx::UniformHandle u_time = bgfx::createUniform("u_time", bgfx::UniformType::Uniform1f);
+
+	// Load diffuse texture.
+
+	bgfx::UniformHandle u_texColor = bgfx::createUniform("u_texColor", bgfx::UniformType::Uniform1iv);
+
+	bgfx::ProgramHandle raymarching = loadProgram("vs_helloworld", "fs_helloworld");
+
+#if 0
+	Texture texture;
+	{
+		int len;
+		char *start = readTextFile( "texture.json", len );
+
+		if ( start == NULL )
+			return -2;
+
+		Json::Reader reader;
+		Json::Value textureRoot;
+		if ( !reader.parse( start, textureRoot ) )
+			return -3;
+		free( start );
+
+		Serialise( textureRoot, texture );
+	}
+	Skeleton skel;
+	{
+		int len;
+		char *start = readTextFile( "skeleton.json", len );
+
+		if ( start == NULL )
+			return -2;
+
+		Json::Reader reader;
+		Json::Value skeletonRoot;
+		if ( !reader.parse( start, skeletonRoot ) )
+			return -3;
+		free( start );
+
+		Serialise( skeletonRoot, skel, texture );
+	}
+#endif
+#if 1
+	SpriterObject spriter;
+	{
+		pugi::xml_document doc;
+		doc.load_file( "GreyGuy\\player.scml" );
+		//doc.load_file( "allPacks\\player.scml" );
+		Serialise( doc.child("spriter_data"), spriter );
+	}
+#endif
+#if 1
+	TexturePacker texture;
+	{
+		int len;
+		//char *start = readTextFile( "Spine\\spineboy.json", len );
+		char *start = readTextFile( "GreyGuyPack\\allpacks_trim.json", len );
+		//char *start = readTextFile( "GreyGuy\\test.json", len );
+
+		if ( start == NULL )
+			return -2;
+
+		Json::Reader reader;
+		Json::Value textureRoot;
+		if ( !reader.parse( start, textureRoot ) )
+			return -3;
+		free( start );
+
+		Serialise( textureRoot, texture );
+	}
+	Spine skel;
+	{
+		int len;
+		char *start = readTextFile( "Spine\\spineboySpineData.json", len );
+
+		if ( start == NULL )
+			return -2;
+
+		Json::Reader reader;
+		Json::Value skeletonRoot;
+		if ( !reader.parse( start, skeletonRoot ) )
+			return -3;
+		free( start );
+
+		Serialise( skeletonRoot, skel );
+	}
+
+#endif
+
+	int64_t timeOffset = bx::getHPCounter();
+
+	const bgfx::Memory* mem;
+	mem = loadTexture( "\\GreyGuyPack\\allpacks_trim.dds" );//texture.imagePath.c_str() );
+	//mem = loadTexture( "\\GreyGuy\\test.dds" );//texture.imagePath.c_str() );
+	bgfx::TextureInfo ti;
+	bgfx::TextureHandle textureColor = bgfx::createTexture(mem, 0, &ti);
+
+#if 0
+	int numEntries =  texture.SubTextures.size();
+	for (int i=0; i<numEntries; i++)
+	{
+		SubTexture &s =  texture.SubTextures[i];
+		s.min_uv[0] = s.x / (float)ti.width;
+		s.min_uv[1] = (s.y / (float)ti.height);
+		s.max_uv[0] = (s.x+s.width-1) / (float)ti.width;
+		s.max_uv[1] = (s.y+s.height-1) / (float)ti.height;
+	}
+#endif
+
+	while (!entry::processEvents(width, height, debug, reset) )
+	{
+		// Set view 0 default viewport.
+		bgfx::setViewRect(0, 0, 0, width, height);
+
+		// Set view 1 default viewport.
+		bgfx::setViewRect(1, 0, 0, width, height);
+
+		// This dummy draw call is here to make sure that view 0 is cleared
+		// if no other draw calls are submitted to viewZ 0.
+		bgfx::submit(0);
+
+		int64_t now = bx::getHPCounter();
+		static int64_t last = now;
+		const int64_t frameTime = now - last;
+		last = now;
+		const double freq = double(bx::getHPFrequency() );
+		const double toMs = 1000.0/freq;
+
+		// Use debug font to print information about this example.
+		bgfx::dbgTextClear();
+		bgfx::dbgTextPrintf(0, 1, 0x4f, "bgfx/examples/00-helloworld2d");
+		bgfx::dbgTextPrintf(0, 2, 0x6f, "Description: Updating shader uniforms.");
+		bgfx::dbgTextPrintf(0, 3, 0x0f, "Frame: % 7.3f[ms]", double(frameTime)*toMs);
+
+		float at[3] = { 0.0f, 0.0f, 0.0f };
+		float eye[3] = { 0.0f, 0.0f, -15.0f };
+		
+		float view[16];
+		float proj[16];
+		mtxLookAt(view, eye, at);
+		mtxProj(proj, 60.0f, float(width)/float(height), 0.1f, 100.0f);
+
+		// Set view and projection matrix for view 1.
+		bgfx::setViewTransform(0, view, proj);
+
+		float ortho[16];
+		mtxOrtho(ortho, 0.0f, 1280.0f, 0.f, 720.0f, 0.0f, 100.0f);
+
+		// Set view and projection matrix for view 0.
+		bgfx::setViewTransform(1, NULL, ortho);
+
+
+		float time = (float)( (bx::getHPCounter()-timeOffset)/double(bx::getHPFrequency() ) );
+		(void)time;
+		//renderScreenSpaceQuad(1, raymarching, 0.0f, 0.0f, 1280.0f, 560.0f);
+		/*float y = 0.f;
+		for (unsigned int i=0; i<texture.SubTextures.size(); i++)
+		{
+			SubTexture const &s = texture.SubTextures[i];
+			// Bind textures.
+			bgfx::setTexture(0, u_texColor, textureColor);
+			renderScreenSpaceQuad(1,raymarching, 0.0f, y, s.width, s.height, s.min_uv[0], s.min_uv[1], s.max_uv[0], s.max_uv[1], 0xffffffff );
+			y += s.height;
+		}*/
+#if 1
+		std::vector<SpriterSpacial> local( spriter.maxBones );
+		SampleAnimation( &local[0], spriter, "Player", "walk", time );
+		std::vector<SpriterSpacial> world(local.size());
+		local[0].x = 100.f;
+		//local[0].y = 100.f;
+		LocalToWorld( &world[0], &local[0], spriter, "Player", "walk", time );
+		DisplaySkin( &world[0], spriter, "Player", "walk", time, texture, raymarching, u_texColor, textureColor, ti.width-1.f, ti.height-1.f );
+#if 0
+		if ( 1 )
+		{
+			static float ofs = 0.f;
+			static float texofs = 0.5f;
+			std::map<std::string,TexturePackerFrame>::const_iterator tf = texture.frames.begin();
+			TexturePackerFrame f = tf->second;
+			f.spriteSourceSize.x += 8.f;
+			f.spriteSourceSize.w -= 8.f;
+			f.frame.x += 8.f;
+			f.frame.w -= 8.f;
+			f.spriteSourceSize.y += 8.f;
+			f.spriteSourceSize.h -= 8.f;
+			f.frame.y += 8.f;
+			f.frame.h -= 8.f;
+
+			float pvtX = 0.0f;//((fileInfo.pivotX - 0.5f) * iSx) + 0.5f;
+			float pvtY = 0.0f;//((fileInfo.pivotY - 0.5f) * iSy) + 0.5f;
+			float ssw = (f.sourceSize.w-1.f);
+			float ssh = (f.sourceSize.h-1.f);
+			float fw = ssw;
+			float fh = ssh;
+			float tw = ti.width-1.f;
+			float th = ti.height-1.f;
+			float left_x = ((f.spriteSourceSize.x / ssw)-pvtX)*fw;
+			float top_y = ((f.spriteSourceSize.y / ssh)-pvtY)*fh;
+			float right_x = (((f.spriteSourceSize.x+f.spriteSourceSize.w-1.f) / ssw)-pvtX)*fw;
+			float bottom_y = (((f.spriteSourceSize.y+f.spriteSourceSize.h-1.f) / ssh)-pvtY)*fh;
+
+			float pnts[4][2];
+			float s = sin(DegToRad(0.f));
+			float c = cos(DegToRad(0.f));
+			pnts[0][0] = (left_x * c) - (top_y * s); pnts[0][1] = (left_x * s) + (top_y * c);
+			pnts[1][0] = (right_x * c) - (top_y * s); pnts[1][1] = (right_x * s) + (top_y * c);
+			pnts[2][0] = (right_x * c) - (bottom_y * s); pnts[2][1] = (right_x * s) + (bottom_y * c);
+			pnts[3][0] = (left_x * c) - (bottom_y * s); pnts[3][1] = (left_x * s) + (bottom_y * c);
+
+			bgfx::setTexture(0, u_texColor, textureColor);
+			renderScreenSpaceQuad(1,raymarching, pnts,
+				(f.frame.x) / tw, (f.frame.y+f.frame.h-1.f) / th,
+				(f.frame.x+f.frame.w-1.f) / tw, (f.frame.y) / th,
+				0xffffffff );
+		}
+		static int count = 0;
+		count++;
+		if ( (count%100)<50  )
+		{
+			static float ofs = 0.f;
+			static float texofs = 0.5f;
+			std::map<std::string,TexturePackerFrame>::const_iterator tf = texture.frames.begin();
+			TexturePackerFrame f = tf->second;
+
+			float pvtX = 0.0f;//((fileInfo.pivotX - 0.5f) * iSx) + 0.5f;
+			float pvtY = 0.0f;//((fileInfo.pivotY - 0.5f) * iSy) + 0.5f;
+			float ssw = (f.sourceSize.w-1.f);
+			float ssh = (f.sourceSize.h-1.f);
+			float fw = ssw;
+			float fh = ssh;
+			float tw = ti.width-1.f;
+			float th = ti.height-1.f;
+			float left_x = ((f.spriteSourceSize.x / ssw)-pvtX)*fw;
+			float top_y = ((f.spriteSourceSize.y / ssh)-pvtY)*fh;
+			float right_x = (((f.spriteSourceSize.x+f.spriteSourceSize.w-1.f) / ssw)-pvtX)*fw;
+			float bottom_y = (((f.spriteSourceSize.y+f.spriteSourceSize.h-1.f) / ssh)-pvtY)*fh;
+
+			float pnts[4][2];
+			float s = sin(DegToRad(0.f));
+			float c = cos(DegToRad(0.f));
+			pnts[0][0] = (left_x * c) - (top_y * s); pnts[0][1] = (left_x * s) + (top_y * c);
+			pnts[1][0] = (right_x * c) - (top_y * s); pnts[1][1] = (right_x * s) + (top_y * c);
+			pnts[2][0] = (right_x * c) - (bottom_y * s); pnts[2][1] = (right_x * s) + (bottom_y * c);
+			pnts[3][0] = (left_x * c) - (bottom_y * s); pnts[3][1] = (left_x * s) + (bottom_y * c);
+
+			bgfx::setTexture(0, u_texColor, textureColor);
+			renderScreenSpaceQuad(1,raymarching, pnts,
+				(f.frame.x) / tw, (f.frame.y+f.frame.h-1.f) / th,
+				(f.frame.x+f.frame.w-1.f) / tw, (f.frame.y) / th,
+				0xffffffff );
+		}
+
+		{
+			static float ofs = 0.f;
+			static float texofs = 0.5f;
+			std::map<std::string,TexturePackerFrame>::const_iterator tf = texture.frames.begin();
+			TexturePackerFrame f = tf->second;
+
+			float pvtX = 0.0f;//((fileInfo.pivotX - 0.5f) * iSx) + 0.5f;
+			float pvtY = 0.0f;//((fileInfo.pivotY - 0.5f) * iSy) + 0.5f;
+			float ssw = (f.sourceSize.w-1.f);
+			float ssh = (f.sourceSize.h-1.f);
+			float fw = ssw;
+			float fh = ssh;
+			float tw = ti.width-1.f;
+			float th = ti.height-1.f;
+			float left_x = ((f.spriteSourceSize.x / ssw)-pvtX)*fw;
+			float top_y = ((f.spriteSourceSize.y / ssh)-pvtY)*fh;
+			float right_x = (((f.spriteSourceSize.x+f.spriteSourceSize.w-1.f) / ssw)-pvtX)*fw;
+			float bottom_y = (((f.spriteSourceSize.y+f.spriteSourceSize.h-1.f) / ssh)-pvtY)*fh;
+
+			float pnts[4][2];
+			float s = sin(DegToRad(0.f));
+			float c = cos(DegToRad(0.f));
+			pnts[0][0] = (left_x * c) - (top_y * s)+100; pnts[0][1] = (left_x * s) + (top_y * c);
+			pnts[1][0] = (right_x * c) - (top_y * s)+100; pnts[1][1] = (right_x * s) + (top_y * c);
+			pnts[2][0] = (right_x * c) - (bottom_y * s)+100; pnts[2][1] = (right_x * s) + (bottom_y * c);
+			pnts[3][0] = (left_x * c) - (bottom_y * s)+100; pnts[3][1] = (left_x * s) + (bottom_y * c);
+
+			bgfx::setTexture(0, u_texColor, textureColor);
+			renderScreenSpaceQuad(1,raymarching, pnts,
+				(f.frame.x) / tw, (f.frame.y+f.frame.h-1.f) / th,
+				(f.frame.x+f.frame.w-1.f) / tw, (f.frame.y) / th,
+				0xffffffff );
+		}
+#endif
+#endif
+#if 0
+		std::vector<Matrix2x3> local(skel.bones.size());
+		SampleAnimation( &local[0], skel, "walk", time );
+		std::vector<Matrix2x3> world(skel.bones.size());
+		local[0].f[2][0] = 100.f;
+		LocalToWorld( &world[0], &local[0], skel );
+		DisplaySkin( &world[0], skel, "default", texture, raymarching, u_texColor, textureColor, (float)ti.width, (float)ti.height );
+#endif
+		//DisplaySkeleton( texture, skel, "0", "run", time, raymarching, u_texColor, textureColor );
+
+		// Advance to next frame. Rendering thread will be kicked to 
+		// process submitted rendering primitives.
+		bgfx::frame();
+	}
+
+	// Cleanup.
+	bgfx::destroyProgram(raymarching);
+	bgfx::destroyUniform(u_texColor);
+	bgfx::destroyTexture(textureColor);
+
+	// Shutdown bgfx.
+	bgfx::shutdown();
+
+	return 0;
+}
+
+#if 0
+float invmtx( 
+// computes the inverse of a matrix m
+double det = m(0, 0) * (m(1, 1) * m(2, 2) - m(2, 1) * m(1, 2)) -
+             m(0, 1) * (m(1, 0) * m(2, 2) - m(1, 2) * m(2, 0)) +
+             m(0, 2) * (m(1, 0) * m(2, 1) - m(1, 1) * m(2, 0));
+
+double invdet = 1 / det;
+
+Matrix33d minv; // inverse of matrix m
+minv(0, 0) = (m(1, 1) * m(2, 2) - m(2, 1) * m(1, 2)) * invdet;
+minv(0, 1) = (m(0, 2) * m(2, 1) - m(0, 1) * m(2, 2)) * invdet;
+minv(0, 2) = (m(0, 1) * m(1, 2) - m(0, 2) * m(1, 1)) * invdet;
+minv(1, 0) = (m(1, 2) * m(2, 0) - m(1, 0) * m(2, 2)) * invdet;
+minv(1, 1) = (m(0, 0) * m(2, 2) - m(0, 2) * m(2, 0)) * invdet;
+minv(1, 2) = (m(1, 0) * m(0, 2) - m(0, 0) * m(1, 2)) * invdet;
+minv(2, 0) = (m(1, 0) * m(2, 1) - m(2, 0) * m(1, 1)) * invdet;
+minv(2, 1) = (m(2, 0) * m(0, 1) - m(0, 0) * m(2, 1)) * invdet;
+minv(2, 2) = (m(0, 0) * m(1, 1) - m(1, 0) * m(0, 1)) * invdet;
+#endif
